@@ -1,0 +1,262 @@
+# Read the CSV file from Downloads folder
+# Option 1: Set working directory to Downloads folder
+setwd("C:/Users/mueha/Downloads")
+data <- read_csv("Paper_3_Year_Citing_Papers.csv")
+
+# Option 2: Alternative - use full path directly (comment out Option 1 if using this)
+# data <- read_csv("C:/Users/mueha/Downloads/Paper_3_Year_Citing_Papers.csv")
+
+# Get column names (paper titles) and extract publication years
+paper_titles <- colnames(data)
+
+# Clean paper titles by removing 'NA' at the end
+clean_paper_title <- function(title) {
+  # Remove 'NA' at the end of the title (case insensitive)
+  cleaned_title <- gsub("\\s*NA\\s*$", "", title, ignore.case = TRUE)
+  # Also remove any trailing whitespace
+  cleaned_title <- trimws(cleaned_title)
+  return(cleaned_title)
+}
+
+# Apply cleaning to all paper titles
+paper_titles <- sapply(paper_titles, clean_paper_title)
+
+# Get the original column names to match with cleaned titles
+original_names <- names(paper_titles)
+
+# Remove any titles that are empty, just "NA", or contain only whitespace
+valid_indices <- paper_titles != "" & !is.na(paper_titles) & paper_titles != "NA"
+paper_titles <- paper_titles[valid_indices]
+original_names <- original_names[valid_indices]
+
+# Filter the data to only include columns with valid paper titles
+data <- data[, original_names, drop = FALSE]
+
+# Extract publication year from paper titles
+get_publication_year <- function(title) {
+  # Extract the first 4-digit number from the title (assumed to be the publication year)
+  year_match <- regexpr("\\b(19|20)\\d{2}\\b", title)
+  if (year_match > 0) {
+    return(as.numeric(regmatches(title, year_match)))
+  } else {
+    return(NA)
+  }
+}
+
+# Create a function to count citations by year for each paper
+count_citations_by_year <- function(column_data, publication_year) {
+  # Remove empty values and convert to numeric
+  years <- column_data[!is.na(column_data) & column_data != ""]
+  years <- as.numeric(years)
+  
+  # Filter out citations before publication year
+  if (!is.na(publication_year)) {
+    years <- years[years >= publication_year]
+  }
+  
+  # Count citations by year
+  if (length(years) > 0) {
+    year_counts <- table(years)
+    
+    # Convert to data frame
+    result <- data.frame(
+      year = as.numeric(names(year_counts)),
+      citations = as.numeric(year_counts)
+    )
+  } else {
+    result <- data.frame(year = numeric(0), citations = numeric(0))
+  }
+  
+  return(result)
+}
+
+# Process each column to get citation counts by year
+citation_data <- list()
+
+for (i in 1:length(paper_titles)) {
+  paper_name <- paper_titles[i]
+  
+  # Skip if paper name is NA, empty, or just "NA"
+  if (is.na(paper_name) || paper_name == "" || paper_name == "NA") {
+    next
+  }
+  
+  # Find the corresponding column in the data
+  col_index <- which(names(data) == names(paper_titles)[i])
+  if (length(col_index) == 0) next
+  
+  publication_year <- get_publication_year(paper_name)
+  year_data <- count_citations_by_year(data[[col_index]], publication_year)
+  
+  # Always include the paper, even if no citations
+  if (nrow(year_data) > 0) {
+    year_data$paper <- paper_name
+    year_data$publication_year <- publication_year
+    citation_data[[paper_name]] <- year_data
+  } else {
+    # Create empty data frame for papers with no citations
+    empty_data <- data.frame(
+      year = numeric(0),
+      citations = numeric(0),
+      paper = paper_name,
+      publication_year = publication_year
+    )
+    citation_data[[paper_name]] <- empty_data
+  }
+}
+
+# Combine all data
+combined_data <- do.call(rbind, citation_data)
+
+# Get the overall year range for all papers
+if (nrow(combined_data) > 0) {
+  min_year <- min(combined_data$year, na.rm = TRUE)
+  max_year <- max(combined_data$year, na.rm = TRUE)
+} else {
+  # If no citation data, use publication years
+  pub_years <- sapply(paper_titles, get_publication_year)
+  min_year <- min(pub_years, na.rm = TRUE)
+  max_year <- max(pub_years, na.rm = TRUE)
+}
+
+# Create a complete year range for all papers, ensuring all papers appear
+complete_data <- list()
+
+for (paper in paper_titles) {
+  # Skip if paper name is NA, empty, or just "NA"
+  if (is.na(paper) || paper == "" || paper == "NA") {
+    next
+  }
+  
+  pub_year <- get_publication_year(paper)
+  
+  if (!is.na(pub_year)) {
+    # Get existing data for this paper
+    paper_data <- combined_data[combined_data$paper == paper, ]
+    
+    # Create year range starting from publication year
+    year_range <- seq(pub_year, max_year)
+    
+    if (nrow(paper_data) > 0) {
+      # Complete the data for this paper
+      paper_complete <- paper_data %>%
+        complete(year = year_range, fill = list(citations = 0)) %>%
+        mutate(paper = paper, publication_year = pub_year)
+    } else {
+      # Create data frame with all zeros for papers with no citations
+      paper_complete <- data.frame(
+        year = year_range,
+        citations = rep(0, length(year_range)),
+        paper = paper,
+        publication_year = pub_year
+      )
+    }
+    
+    complete_data[[paper]] <- paper_complete
+  }
+}
+
+# Combine all completed data
+complete_data <- do.call(rbind, complete_data)
+
+# Remove any rows with NA paper names
+complete_data <- complete_data[!is.na(complete_data$paper) & complete_data$paper != "" & complete_data$paper != "NA", ]
+
+# Ensure all papers are included in the factor levels for consistent coloring
+# Only include valid paper titles in the factor levels
+valid_papers <- unique(complete_data$paper)
+complete_data$paper <- factor(complete_data$paper, levels = valid_papers)
+
+# Create a custom color palette similar to Dark2 but with better visibility
+n_papers <- length(valid_papers)
+
+# Option 1: Modified Dark2 with better contrast
+dark2_improved <- c("#1B9E77", "#D95F02", "#7570B3", "#E7298A", "#66A61E", "#E6AB02", "#A6761D", "#666666")
+
+# Option 2: Custom palette inspired by Dark2 but darker
+custom_dark <- c("#2E8B57", "#CD5C5C", "#6A5ACD", "#DC143C", "#228B22", "#B8860B", "#8B4513", "#2F4F4F")
+
+# Option 3: Viridis-like but with distinct colors
+viridis_distinct <- c("#440154", "#31688E", "#35B779", "#FDE725", "#B83DBA", "#2A788E", "#7AD151", "#FFA500")
+
+# Choose one of the palettes (you can change this to test different options)
+if (n_papers <= 8) {
+  colors <- dark2_improved[1:n_papers]
+} else {
+  # For more papers, combine with additional colors
+  colors <- c(
+    dark2_improved,
+    c("#8B0000", "#4B0082", "#006400", "#8B008B", "#FF6347", "#4682B4", "#D2691E", "#9ACD32")[1:(n_papers-8)]
+  )
+}
+
+# Create the line chart with Aptos font
+p <- ggplot(complete_data, aes(x = year, y = citations, color = paper)) +
+  geom_line(size = 0.6, alpha = 0.8) +
+  geom_point(size = 1.2, alpha = 0.7) +
+  
+  # Customize the appearance with Aptos font
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Aptos"),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5, margin = margin(b = 5), family = "Aptos"),
+    plot.subtitle = element_text(size = 12, hjust = 0.5, color = "gray60", margin = margin(b = 10), family = "Aptos"),
+    axis.title = element_text(size = 12, face = "bold", family = "Aptos"),
+    axis.text = element_text(size = 10, family = "Aptos"),
+    legend.title = element_text(size = 12, face = "bold", family = "Aptos"),
+    legend.text = element_text(size = 9, family = "Aptos"),
+    legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "gray90", linetype = "dotted"),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA)
+  ) +
+  
+  # Add labels and title
+  labs(
+    title = "Citation Trends Over Time",
+    subtitle = "Number of citations per year for each paper",
+    x = "Year of Publication",
+    y = "Number of Citations",
+    color = "Paper Title"
+  ) +
+  
+  # Customize scales
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+  
+  # Use custom color palette to ensure all papers get colors
+  scale_color_manual(values = colors[1:n_papers]) +
+  
+  # Add guides for better legend
+  guides(color = guide_legend(override.aes = list(size = 3, alpha = 1), ncol = 2))
+
+# Display the plot
+print(p)
+
+# Optional: Save the plot
+ggsave("citation_trends.png", plot = p, width = 14, height = 8, dpi = 300, bg = "white")
+
+# Print summary statistics
+cat("\n=== CITATION SUMMARY ===\n")
+summary_stats <- complete_data %>%
+  group_by(paper) %>%
+  summarise(
+    total_citations = sum(citations),
+    avg_citations_per_year = mean(citations),
+    peak_year = year[which.max(citations)],
+    peak_citations = max(citations),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(total_citations))
+
+print(summary_stats)
+
+# Debug: Print which papers are included
+cat("\n=== PAPERS INCLUDED ===\n")
+cat("Total papers:", length(unique(complete_data$paper)), "\n")
+cat("Papers:\n")
+for (paper in unique(complete_data$paper)) {
+  cat("-", paper, "\n")
+}
