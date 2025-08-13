@@ -1,0 +1,156 @@
+# Load libraries
+library(ggplot2)
+library(dplyr)
+
+# Step 1: Read the CSV file
+data <- read.csv("Paper_3_Self_Citations.csv", header = FALSE, stringsAsFactors = FALSE)
+
+# Optional: Inspect raw data
+print(head(data, 6))
+
+# Step 2: Extract data, skipping first column (assumed to be labels/years)
+# Row 2: Total Citations
+# Row 4: Self-References
+# Row 5: Non-Self-References
+# Column 1 is ignored (Year or label), Columns 2+ are papers
+
+# Extract paper names from Row 1, Columns 2+
+paper_names <- as.character(data[1, -1])
+paper_names <- trimws(paper_names)
+
+# Helper function to safely convert to numeric
+safe_numeric <- function(x) {
+  x <- as.character(x)
+  x[x %in% c("", "NA", "N/A", "n/a", "--", ".", " ") ] <- NA
+  as.numeric(x)
+}
+
+# Extract and convert each row
+total_citations <- safe_numeric(data[2, -1])
+self_refs        <- safe_numeric(data[4, -1])
+non_self_refs    <- safe_numeric(data[5, -1])
+
+# Step 3: Create data frame
+df <- data.frame(
+  Paper = paper_names,
+  Total_Citations = total_citations,
+  Self_References = self_refs,
+  Non_Self_References = non_self_refs
+)
+
+# Step 4: Remove rows with NA in numeric columns
+# Only remove NAs from numeric variables, but keep the Paper column
+df_clean <- df[complete.cases(df[, c("Total_Citations", "Self_References", "Non_Self_References")]), ]
+
+# Make sure numeric columns stay numeric
+df_clean$Total_Citations <- as.numeric(df_clean$Total_Citations)
+df_clean$Self_References <- as.numeric(df_clean$Self_References)
+df_clean$Non_Self_References <- as.numeric(df_clean$Non_Self_References)
+
+# Step 5: Display cleaned data
+print("Cleaned Data Frame:")
+print(df_clean, row.names = FALSE)
+
+# Step 6: Run multiple linear regression
+# Only use numeric columns
+model <- lm(Total_Citations ~ Self_References + Non_Self_References, data = df_clean)
+
+# Show results
+print("Regression Summary:")
+print(summary(model))
+
+# Tidy output (optional)
+if (!require(broom)) install.packages("broom")
+library(broom)
+print(tidy(model))
+
+# Step 7: Plots
+
+# Plot 1: Total Citations vs Self-References
+p1 <- ggplot(df_clean, aes(x = Self_References, y = Total_Citations)) +
+  geom_point(color = "steelblue") +
+  geom_smooth(method = "lm", se = TRUE, color = "darkblue") +
+  labs(title = "Total Citations vs Self-References",
+       x = "Self-References", y = "Total Citations") +
+  theme_minimal()
+
+# Plot 2: Total Citations vs Non-Self-References
+p2 <- ggplot(df_clean, aes(x = Non_Self_References, y = Total_Citations)) +
+  geom_point(color = "seagreen") +
+  geom_smooth(method = "lm", se = TRUE, color = "darkgreen") +
+  labs(title = "Total Citations vs Non-Self-References",
+       x = "Non-Self-References", y = "Total Citations") +
+  theme_minimal()
+
+# Print plots
+print(p1)
+print(p2)
+
+# Diagnostic plot: Residuals vs Fitted
+plot(model, which = 1)
+
+# Optional: Correlation (numeric only)
+cat("\nCorrelation Matrix (numeric variables only):\n")
+cor_numeric <- cor(df_clean[, c("Total_Citations", "Self_References", "Non_Self_References")], use = "complete.obs")
+print(cor_numeric)
+
+# -------------------------------
+# Step 1: Load required package
+# -------------------------------
+if (!require(car)) {
+  install.packages("car")
+}
+library(car)
+
+# -------------------------------
+# Step 2: Check correlation between predictors
+# -------------------------------
+cat("=== Correlation Between Predictors ===\n")
+correlation <- cor(df_clean$Self_References, df_clean$Non_Self_References, use = "complete.obs")
+print(correlation)
+
+# Optional: Pretty output
+cat("\nCorrelation between Self-References and Non-Self-References: ")
+cat(sprintf("%.3f\n", correlation))
+
+# -------------------------------
+# Step 3: Calculate Variance Inflation Factors (VIF)
+# -------------------------------
+cat("\n=== Variance Inflation Factors (VIF) ===\n")
+vif_values <- vif(model)
+print(vif_values)
+
+# -------------------------------
+# Step 4: Interpret VIF
+# -------------------------------
+cat("\n=== Interpretation ===\n")
+
+# Rule of thumb:
+# VIF < 1: Impossible (minimum is 1)
+# VIF = 1: No multicollinearity
+# 1 < VIF < 5: Moderate, generally acceptable
+# VIF > 5: High multicollinearity
+# VIF > 10: Very high (problematic)
+
+vif_self   <- vif_values["Self_References"]
+vif_nonself <- vif_values["Non_Self_References"]
+
+cat("VIF > 5 is a cause for concern.\n")
+cat("VIF > 10 indicates severe multicollinearity.\n\n")
+
+if (vif_self > 5 || vif_nonself > 5) {
+  cat("🔴 WARNING: High multicollinearity detected.\n")
+  if (vif_self > 10 || vif_nonself > 10) {
+    cat("🚨 VIF > 10: Consider removing or combining predictors.\n")
+  }
+} else {
+  cat("✅ VIF values are within acceptable range.\n")
+}
+
+# -------------------------------
+# Step 5: Additional diagnostic - Tolerance
+# -------------------------------
+cat("\n=== Tolerance (1 / VIF) ===\n")
+tolerance <- 1 / vif_values
+print(tolerance)
+cat("Tolerance < 0.2 (i.e., VIF > 5) suggests high multicollinearity.\n")
