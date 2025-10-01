@@ -1,0 +1,33 @@
+library(fmsb)
+
+data <- data.frame(
+  "Clear Question" = c(10, 0, 10),           # 100%
+  "Right Papers" = c(10, 0, 9),              # 90%
+  "Study Inclusion" = c(10, 0, 7),           # 70%
+  "Quality Assessment" = c(10, 0, 9),        # 90%
+  "Result Combination" = c(10, 0, 9),        # 90%
+  "Overall Results" = c(10, 0, 9),           # 90%
+  "Precision" = c(10, 0, 6),                 # 60%
+  "Local Applicability" = c(10, 0, 8),       # 80%
+  "All Outcomes" = c(10, 0, 9),              # 90%
+  "Benefits vs. Harms" = c(10, 0, 6),        # 60%
+  check.names = FALSE
+)
+
+rownames(data) <- c("Max", "Min", "Score")
+
+par(mar = c(1, 1, 2, 1), bg = "white")
+
+radarchart(
+  data,
+  axistype = 1,  
+  pcol = "gray60",
+  pfcol = rgb(0.8, 0.8, 0.8, 0.3),
+  plwd = 3,  
+  cglcol = "grey",
+  cglty = 1,
+  cglwd = 0.8,
+    axislabcol = "grey40",
+  vlcex = 0.9,
+    title = ""
+)
